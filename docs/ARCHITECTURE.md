@@ -91,7 +91,7 @@ macOS leaves hotkey events queued during menu tracking. While the menu is open, 
 ## Days
 
 - A frame's day folder is its calendar date (`dayName(for:)`), so work past midnight lands in the next day's folder. There used to be a "New day starts at" setting; projects made it unnecessary, so it was removed.
-- Only folders named exactly `YYYY-MM-DD` count as days. Retention, Delete All, size and export ignore everything else (`Exports/`, user files).
+- Only folders named exactly `YYYY-MM-DD` count as days. Retention, Delete Screenshots, size and export ignore everything else (`Exports/`, user files).
 
 ## Projects and the folder watcher
 
@@ -102,7 +102,7 @@ macOS leaves hotkey events queued during menu tracking. While the menu is open, 
   - If the root itself is missing (renamed away, disk unmounted), the selection is kept.
 - If the root is renamed or moved, the watcher reads its new path from the open folder (`fcntl F_GETPATH`) and updates `rootPath`. A move into the Trash is treated as a deletion, not followed.
 - `watchRoot` is a `DispatchSource` on the root directory (write/rename/delete). If the root is missing, it watches the parent instead and starts over on any change there. `syncWithDisk()` also runs when the menu opens and when Settings comes forward, as a safety net.
-- **Rename** moves the folder (case-only renames go through a temporary name). **Remove** trashes or deletes the folder (following "Delete permanently"). **Change (Location)** points at another folder and doesn't move data; it refuses a folder that holds day folders directly.
+- **Rename** moves the folder (case-only renames go through a temporary name). **Delete Project** trashes or deletes the folder (following "Delete permanently"). **Change (Location)** points at another folder and doesn't move data; it refuses a folder that holds day folders directly.
 - Background code reads `Storage.folderPath` (the active project's path), which `SettingsStore` keeps in sync.
 
 ## Settings flow

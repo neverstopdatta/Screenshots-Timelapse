@@ -78,7 +78,7 @@ struct GeneralTab: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text("Logs")
-                        InfoButton("A record of captures, pauses and errors. Check it if screenshots stop saving.")
+                        InfoButton("Records captures, pauses and errors. Check it when screenshots stop saving.")
                     }
                 }
             }
@@ -152,7 +152,7 @@ struct CaptureTab: View {
             Toggle(isOn: $settings.halfSizeOnRetina) {
                 HStack(spacing: 4) {
                     Text("Half size on Retina displays")
-                    InfoButton("Retina displays have 2 pixels for every point, so screenshots are normally twice as wide and tall as the screen's resolution setting. This captures at 1 pixel per point instead: a quarter of the pixels, so much smaller files.")
+                    InfoButton("Captures 1 pixel per point instead of 2: a quarter of the pixels, so smaller files.")
                 }
             }
             Picker("Format", selection: $settings.imageFormat) {
@@ -227,12 +227,7 @@ struct StorageTab: View {
             }
             }
             Section {
-                Toggle(isOn: $settings.deletePermanently) {
-                    HStack(spacing: 4) {
-                        Text("Delete permanently (skip Trash)")
-                        InfoButton("Applies to every deletion: Delete older than, Delete All Screenshots and Remove Project. Off moves folders to the Trash instead.")
-                    }
-                }
+                Toggle("Delete permanently (skip Trash)", isOn: $settings.deletePermanently)
             }
             Section {
                 Picker("Delete older than", selection: $settings.deleteAfterDays) {
@@ -246,8 +241,8 @@ struct StorageTab: View {
             Section {
                 HStack {
                     Spacer()
-                    Button("Delete All Screenshots…", role: .destructive, action: deleteAll)
-                    Button("Remove Project…", role: .destructive, action: removeProject)
+                    Button("Delete Screenshots…", role: .destructive, action: deleteAll)
+                    Button("Delete Project…", role: .destructive, action: removeProject)
                         .disabled(SettingsStore.shared.projects.count < 2)
                 }
             }
@@ -307,12 +302,12 @@ struct StorageTab: View {
 
     private func removeProject() {
         let alert = NSAlert()
-        alert.messageText = "Remove \"\(settings.activeProject)\"?"
+        alert.messageText = "Delete project \"\(settings.activeProject)\"?"
         alert.informativeText = settings.deletePermanently
             ? "Its folder, including screenshots and exported videos, will be deleted permanently."
             : "Its folder, including screenshots and exported videos, will be moved to the Trash."
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         if let error = settings.removeActiveProject() { ProjectPrompt.showError(error) }
