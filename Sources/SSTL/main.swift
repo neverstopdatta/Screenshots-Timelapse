@@ -5,6 +5,25 @@ import CoreGraphics
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var didRequestScreenCaptureAccess = false
+    private var captureFailed = false
+    private var lastStatus = "○"
+    private var hotkeyPump: Timer?
+    private var fixItem: NSMenuItem!
+    private var currentFix: Fix?
+    private static let captureFailingText = "⚠ Capture failing"
+
+    // The step that fixes an alert, offered as a menu item under the status line.
+    private enum Fix {
+        case screenRecording, storage, log
+
+        var title: String {
+            switch self {
+            case .screenRecording: "Open Screen Recording Settings…"
+            case .storage: "Open Storage Settings…"
+            case .log: "Show Log in Finder"
+            }
+        }
+    }
     private var captureEngine: CaptureEngine!
     private var hotkey: Hotkey!
     private var toggleItem: NSMenuItem!
@@ -41,7 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(toggleItem)
         statusLine = NSMenuItem(title: "○", action: nil, keyEquivalent: "")
         statusLine.isEnabled = false
+        setStatusLine("○")
         menu.addItem(statusLine)
+        fixItem = NSMenuItem(title: "", action: #selector(applyFix), keyEquivalent: "")
+        fixItem.isHidden = true
+        menu.addItem(fixItem)
         menu.addItem(.separator())
         blockItem = NSMenuItem(title: "Block Frontmost App", action: #selector(toggleFrontmostRule), keyEquivalent: "")
         menu.addItem(blockItem)
@@ -63,8 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         captureEngine = CaptureEngine(settings: settings, capture: {
             do {
                 try await Screenshotter.captureAllDisplays(appRules: self.appRules)
+                await MainActor.run { self.setCaptureFailed(false) }
             } catch {
                 SSTLLog.write("Screenshot failed: \(error.localizedDescription)")
+                await MainActor.run { self.setCaptureFailed(true) }
             }
         }, pauseReason: { [weak self] in
             guard let self else { return .notAllowed }
@@ -73,7 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.renderStatus(text)
         })
         hotkey = Hotkey { [weak self] in
-            Task { @MainActor in self?.performToggle(viaShortcut: true) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.performToggle(viaShortcut: true)
+                // Like Cmd+, and Cmd+Q, acting on a shortcut dismisses the open menu.
+                if self.captureEngine.isMenuOpen { self.statusItem.menu?.cancelTracking() }
+            }
         }
         ShortcutRegistrar.apply = { [weak self] keyCode, modifiers in
             guard let self else { return false }
@@ -85,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             _ = self.hotkey.register(keyCode: old.keyCode, carbonModifiers: old.carbonModifiers)
             return false
         }
+        ToggleFeedback.clearDelivered()
+        removeIncompleteFiles()
         runRetention()
         UpdateChecker.checkIfDue()
         let retentionTimer = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in
@@ -100,9 +132,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { ToggleFeedback.clearDelivered() }
+    }
+
     @MainActor private func applyToggleShortcut(_ keyCode: UInt32, _ modifiers: UInt32) {
         toggleItem.keyEquivalent = KeyNames.character(for: keyCode) ?? ""
         toggleItem.keyEquivalentModifierMask = KeyNames.menuModifierMask(modifiers)
+    }
+
+    // Half-written frames and exports from a quit or crash are never useful, so they go at launch.
+    @MainActor private func removeIncompleteFiles() {
+        let current = SettingsStore.shared.settings
+        let folders = SettingsStore.shared.projects.map { current.rootURL.appendingPathComponent($0, isDirectory: true) }
+        DispatchQueue.global(qos: .utility).async {
+            for folder in folders { Storage.removeIncompleteFiles(in: folder) }
+        }
     }
 
     @MainActor private func runRetention() {
@@ -119,7 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @MainActor @objc private func toggleCapture() {
-        performToggle(viaShortcut: false)
+        // The menu item's own key equivalent arrives here as a key press, so it gets the shortcut's sound and banner.
+        performToggle(viaShortcut: NSApp.currentEvent?.type == .keyDown)
     }
 
     // Sound and notification are only for the global shortcut, where there is no menu to show the change.
@@ -129,12 +175,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if viaShortcut { ToggleFeedback.announce(started: captureEngine.isStarted, settings: SettingsStore.shared.settings) }
     }
 
+    // A disabled item is drawn very faint, so use the primary text colour, which adapts to light and dark.
+    @MainActor private func setStatusLine(_ text: String) {
+        statusLine.attributedTitle = NSAttributedString(
+            string: text, attributes: [.foregroundColor: NSColor.labelColor, .font: NSFont.menuFont(ofSize: 0)])
+    }
+
+    @MainActor private func setCaptureFailed(_ failed: Bool) {
+        guard failed != captureFailed else { return }
+        captureFailed = failed
+        renderStatus(lastStatus)
+    }
+
     @MainActor private func renderStatus(_ text: String) {
-        statusLine.title = text
-        // One thing shows at a time: the app icon when idle, a symbol when paused or blocked, else the countdown.
+        lastStatus = text
+        // Capture is running but nothing is being saved: show it as an error, not as a countdown, even while the menu holds it.
+        let counting = text.hasPrefix("● ") || (text.hasPrefix("⏸ ") && text.dropFirst(2).first?.isNumber == true)
+        let failing = captureFailed && counting
+        let shown = failing ? Self.captureFailingText : text
+        setStatusLine(shown)
+        if shown == AppRules.Pause.noScreenAccess.statusText { currentFix = .screenRecording }
+        else if shown == AppRules.Pause.lowDisk.statusText { currentFix = .storage }
+        else if shown == Self.captureFailingText { currentFix = .log }
+        else { currentFix = nil }
+        fixItem.isHidden = currentFix == nil
+        fixItem.title = currentFix?.title ?? ""
+        // One thing shows at a time: the app icon when idle, a symbol when paused, blocked or failing, else the countdown.
         let button = statusItem.button
         button?.title = ""
-        if text == "○" {
+        if failing || text.hasPrefix("⚠") {
+            button?.image = Self.symbol("exclamationmark.triangle.fill")
+        } else if text == "○" {
             button?.image = menuBarImage
         } else if text == AppRules.Pause.notAllowed.statusText {
             button?.image = Self.symbol("nosign")
@@ -170,6 +241,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openScreenshotsFolder() {
         try? FileManager.default.createDirectory(at: Storage.screenshotsFolder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Storage.screenshotsFolder)
+    }
+
+    @MainActor @objc private func applyFix() {
+        switch currentFix {
+        case .screenRecording:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        case .storage: showSettings(tab: .storage)
+        case .log: SSTLLog.revealInFinder()
+        case nil: break
+        }
     }
 
     @MainActor @objc private func openSettings() {
@@ -214,10 +295,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         SettingsStore.shared.syncWithDisk()
         updateProjectMenu()
         captureEngine.isMenuOpen = true
+        // Polled often enough that presses feel instant while the menu tracks.
+        let pump = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.hotkey.drainPending() }
+        RunLoop.main.add(pump, forMode: .common)
+        hotkeyPump = pump
     }
 
     @MainActor func menuDidClose(_ menu: NSMenu) {
         captureEngine.isMenuOpen = false
+        hotkeyPump?.invalidate()
+        hotkeyPump = nil
     }
 
     // A submenu that opens to the side when the item is hovered.
@@ -245,12 +332,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @MainActor @objc private func newProject() {
-        guard let name = ProjectPrompt.askName() else { return }
-        var updated = SettingsStore.shared.settings
-        if let error = updated.addProject(named: name) {
-            ProjectPrompt.showError(error)
-        } else {
-            saveSettings(updated)
+        // Default mode only runs once menu tracking has ended, so the item is not left highlighted behind the prompt.
+        RunLoop.main.perform(inModes: [.default]) {
+            MainActor.assumeIsolated {
+                guard let name = ProjectPrompt.askName() else { return }
+                var updated = SettingsStore.shared.settings
+                if let error = updated.addProject(named: name) {
+                    ProjectPrompt.showError(error)
+                } else {
+                    self.saveSettings(updated)
+                }
+            }
         }
     }
 

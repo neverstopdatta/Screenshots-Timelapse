@@ -72,6 +72,16 @@ struct GeneralTab: View {
                     Button("Check for Updates…") { UpdateChecker.check(userInitiated: true) }
                 }
             }
+            Section {
+                LabeledContent {
+                    Button("Show in Finder") { SSTLLog.revealInFinder() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Logs")
+                        InfoButton("A record of captures, pauses and errors. Check it if screenshots stop saving.")
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
     }
@@ -131,10 +141,15 @@ struct CaptureTab: View {
                     Text("Disconnected display").tag(settings.displays)
                 }
             }
-            Toggle("Half size on Retina", isOn: $settings.halfSizeOnRetina)
+            Toggle(isOn: $settings.halfSizeOnRetina) {
+                HStack(spacing: 4) {
+                    Text("Half size on Retina displays")
+                    InfoButton("Retina displays have 2 pixels for every point, so screenshots are normally twice as wide and tall as the screen's resolution setting. This captures at 1 pixel per point instead: a quarter of the pixels, so much smaller files.")
+                }
+            }
             Picker("Format", selection: $settings.imageFormat) {
                 Text("JPEG").tag("jpeg")
-                if Screenshotter.heicAvailable { Text("HEIC").tag("heic") }
+                if Screenshotter.heicAvailable { Text("HEIF").tag("heic") }
                 Text("PNG").tag("png")
             }
             if settings.imageFormat != "png" {
@@ -158,6 +173,8 @@ struct StorageTab: View {
     @FocusState private var nameFocused: Bool
     // Folder names can't contain "/", so this tag never clashes with a project.
     private static let newProjectTag = "/new"
+    // Changing this rebuilds the picker, so it snaps back to the real project after "New Project…" is clicked.
+    @State private var pickerID = 0
 
     var body: some View {
         Form {
@@ -166,7 +183,11 @@ struct StorageTab: View {
                 get: { settings.activeProject },
                 set: { picked in
                     if picked == Self.newProjectTag {
-                        DispatchQueue.main.async(execute: newProject)
+                        DispatchQueue.main.async {
+                            pickerID += 1
+                            newProject()
+                            pickerID += 1
+                        }
                     } else {
                         settings.activeProject = picked
                     }
@@ -176,6 +197,7 @@ struct StorageTab: View {
                 Divider()
                 Text("New Project…").tag(Self.newProjectTag)
             }
+            .id(pickerID)
             TextField("Name", text: $nameDraft)
                 .focused($nameFocused)
                 .onSubmit(commitName)
@@ -220,6 +242,8 @@ struct StorageTab: View {
         .onAppear {
             nameDraft = settings.activeProject
             refreshSize()
+            // AppKit hands the first text field (Name) keyboard focus when a tab appears; start with none.
+            DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) }
         }
         .onChange(of: settings.folderPath) { _, _ in
             nameDraft = settings.activeProject

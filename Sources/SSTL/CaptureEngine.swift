@@ -165,7 +165,9 @@ final class CaptureEngine {
     private func setStatus(_ status: String) {
         guard lastStatus != status else { return }
         lastStatus = status
-        SSTLLog.write("Status changed: \(status)")
+        // Countdown ticks change every second and say nothing the log needs.
+        let counting = status.hasPrefix("● ") || (status.hasPrefix("⏸ ") && status.dropFirst(2).first?.isNumber == true)
+        if !counting { SSTLLog.write("Status changed: \(status)") }
         render(status)
     }
 }

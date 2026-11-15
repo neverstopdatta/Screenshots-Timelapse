@@ -68,6 +68,22 @@ enum Storage {
         return removed
     }
 
+    // Frames are written as "<name>.tmp" and exports as "<name>.partial" until they finish.
+    static func removeIncompleteFiles(in folder: URL) {
+        let fm = FileManager.default
+        func names(_ url: URL) -> [String] { (try? fm.contentsOfDirectory(atPath: url.path)) ?? [] }
+        for name in names(folder) {
+            let dir = folder.appendingPathComponent(name, isDirectory: true)
+            if dayDate(name) != nil {
+                for file in names(dir) where file.hasSuffix(".tmp") { try? fm.removeItem(at: dir.appendingPathComponent(file)) }
+            } else if name == "Exports" {
+                for file in names(dir) where file.hasSuffix(".partial") || file.contains(".partial.sb-") {
+                    try? fm.removeItem(at: dir.appendingPathComponent(file))
+                }
+            }
+        }
+    }
+
     static func usedBytes(in folder: URL) -> Int64 {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         var total: Int64 = 0

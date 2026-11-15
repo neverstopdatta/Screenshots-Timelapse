@@ -88,11 +88,15 @@ enum Exporter {
         for task in tasks {
             let before = finished
             let report = { (done: Int) in progress(Double(before + done) / Double(total)) }
+            // Written under a temporary name so a quit mid-export never leaves a broken video; launch removes leftovers.
+            let partial = task.out.appendingPathExtension("partial")
             if ext == "gif" {
-                try encodeGIF(task.files, fps: fps, options: gif, out: task.out, job: job, report: report)
+                try encodeGIF(task.files, fps: fps, options: gif, out: partial, job: job, report: report)
             } else {
-                try encode(task.files, fps: fps, out: task.out, job: job, report: report)
+                try encode(task.files, fps: fps, out: partial, job: job, report: report)
             }
+            try? FileManager.default.removeItem(at: task.out)
+            try FileManager.default.moveItem(at: partial, to: task.out)
             finished += task.files.count
             outputs.append(task.out)
         }

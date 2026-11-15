@@ -9,14 +9,15 @@ final class AppRules {
     }
 
     enum Pause: Equatable {
-        case notAllowed, locked, asleep, lowDisk, idle
+        case notAllowed, locked, asleep, lowDisk, noScreenAccess, idle
 
         var statusText: String {
             switch self {
-            case .notAllowed: "⊘ Not allowed"
+            case .notAllowed: "⊘ App not allowed"
             case .locked: "⏸ Locked"
             case .asleep: "⏸ Asleep"
-            case .lowDisk: "⏸ Low disk"
+            case .lowDisk: "⚠ Low disk space"
+            case .noScreenAccess: "⚠ Screen recording disabled"
             case .idle: "⏸ Idle"
             }
         }

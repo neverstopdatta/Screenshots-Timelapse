@@ -8,6 +8,7 @@ The app is **Screenshots Timelapse**, SSTL in code: target and executable `SSTL`
 
 - `swift build` compiles only. `scripts/build.sh` builds release, assembles `build/Screenshots Timelapse.app` (binary, `Info.plist`, `AppIcon.icns`, `MenuBarIcon@2x.png`), signs it and relaunches it.
 - `scripts/app-icon.sh` and `scripts/menubar-icon.sh` render an SVG (`render-svg.swift`, compiled on first use) into `Resources/` and rebuild. `scripts/release.sh` sets the version in `Info.plist`, builds with `NO_LAUNCH=1`, zips, tags and creates the GitHub release; it refuses to touch an existing tag and leaves "Latest" alone for versions lower than the newest tag, because `UpdateChecker` reads GitHub's latest release. `scripts/push.sh` commits and pushes.
+- `scripts/test.sh` simulates the alert states (low disk, idle, Screen Recording denied, unwritable folder) by editing the settings file or folder permissions, and restores them. See its header.
 - `scripts/setup-signing.sh` creates a self-signed "SSTL Local Signing" identity once. A stable signature means macOS keeps the Screen Recording permission across rebuilds, instead of asking again after each one.
 - `Info.plist` sets `LSUIElement`, so the app has no Dock icon and lives in the menu bar. It needs macOS 14 or later.
 
@@ -30,7 +31,7 @@ The default root is `~/Pictures/SSTL`.
 | `CaptureEngine.swift` | The countdown timer: start/stop, pause holding, interval changes, when to shoot |
 | `Screenshotter.swift` | Takes one screenshot per display with ScreenCaptureKit and writes the image file |
 | `AppRules.swift` | Block/allow lists, frontmost-app tracking, and building the `SCContentFilter` (what is hidden) |
-| `SystemState.swift` | Other pause reasons: locked, asleep, idle, low disk |
+| `SystemState.swift` | Other pause reasons: locked, asleep, Screen Recording off, low disk, idle |
 | `Settings.swift` | `SSTLSettings` (the saved model) and `SettingsStore` (load/save, project list, folder watcher) |
 | `Projects.swift` | Project = folder; add/rename/remove; name checks; the New Project prompt |
 | `Storage.swift` | Paths, day naming, retention deletes, size |
@@ -38,7 +39,7 @@ The default root is `~/Pictures/SSTL`.
 | `GIFWriter.swift` | Streaming GIF encoder: palette, quantiser, frame diff, LZW |
 | `Exporter.swift` | Lists days and writes videos with AVFoundation (`AVAssetWriter`) |
 | `ToggleFeedback.swift` | Notification and system sound when the global shortcut starts or stops capture |
-| `Hotkey.swift` | Global start/stop shortcut via Carbon `RegisterEventHotKey` |
+| `Hotkey.swift` | Global start/stop shortcut via Carbon `RegisterEventHotKey`. `drainPending()` pulls queued hotkey events out by hand, because macOS holds them while a menu is open |
 | `ShortcutRecorder.swift` | Shortcut recording field and key name display |
 | `SettingsWindow.swift` | Settings window (and `SettingsTab` selection, so the menu can open a given tab), Apps tab, Timelapse (export) tab |
 | `SettingsTabs.swift` | General, Capture and Storage tabs, plus shared controls (`DurationField`, `IntField`, `RepeatButton`) |
@@ -49,12 +50,32 @@ The default root is `~/Pictures/SSTL`.
 
 1. `CaptureEngine.start()` starts a 0.2 s timer in the run loop's common modes, so it keeps firing while the menu is open. It also begins a `ProcessInfo` activity so App Nap doesn't slow it down.
 2. Each `tick()`:
-   - asks `pauseReason()`, which is `SystemState` first and then `AppRules`. A reason *holds* the countdown (the remaining time is saved in `pausedRemaining`) and shows a status such as `⏸ Idle` or `⊘ Not allowed`.
+   - asks `pauseReason()`, which is `SystemState` first and then `AppRules`. A reason *holds* the countdown (the remaining time is saved in `pausedRemaining`) and shows a status such as `⏸ Idle` or `⊘ App not allowed`.
    - also holds while the menu or a focused Settings window is open, if "pause when menu open" is on.
    - when the countdown reaches zero, calls `performCapture()` and schedules the next shot from the *scheduled* time, not from now, so the interval doesn't drift.
    - if the interval setting changes, shifts the pending shot by the difference.
 3. Stop with "resume countdown" on keeps the time left for the next start. "Capture on start" takes a shot immediately, or as soon as the menu closes if it is holding.
-4. The status string drives the menu bar: `○` = idle (shows the icon), `⏸`/`⊘` = SF Symbol, `● 12s` = countdown text.
+4. The status string drives the menu bar: `○` = idle (shows the icon), `⏸`/`⊘` = SF Symbol (pause / nosign), `⚠` = alert triangle for errors, `● 12s` = countdown text.
+
+### Status priority
+
+The first that applies wins (highest first):
+
+1. `○` capture not started
+2. `⏸ Locked`, then `⏸ Asleep` (expected pauses)
+3. `⚠ Screen recording disabled` (checked every 5 s with `CGPreflightScreenCaptureAccess`)
+4. `⚠ Low disk space` (checked once a minute)
+5. `⏸ Idle`
+6. `⊘ App not allowed` (app rules)
+7. `⚠ Capture failing`: every display failed to capture or save, so nothing is being saved. It replaces the countdown, and the "held by menu" countdown, until a capture succeeds. It is an overlay set in `renderStatus`, not a pause reason, because capture must keep retrying.
+8. `⏸ 7s`: countdown held while the menu or Settings is open
+9. `● 12s` countdown
+
+`renderStatus` also shows a fix item under the status line for 3, 4 and 7: open the Screen Recording pane of System Settings (`x-apple.systempreferences:…Privacy_ScreenCapture`), open Settings > Storage, or show the log in Finder.
+
+### Hotkey while the menu is open
+
+macOS leaves hotkey events queued during menu tracking. While the menu is open, a 50 ms timer (common run loop modes) calls `Hotkey.drainPending()`, so each press acts at once, and the action then calls `cancelTracking()` to close the menu like Cmd+, or Cmd+Q do.
 
 ## Taking a screenshot
 
@@ -65,7 +86,7 @@ The default root is `~/Pictures/SSTL`.
   - **Wallpaper off**: excluding the wallpaper app doesn't remove the wallpaper. Three windows must be hidden by window (wallpaper agent, Dock's "Wallpaper-…", ownerless "Desktop") so the background colour shows through.
   - **Allow mode** includes only the allowed apps (plus wallpaper/notifications if shown). With desktop icons on, it instead hides every other window, because including apps never captures the icons. If an allowed app isn't running, it skips.
 - After capture, `frontmostStillAllowsCapture` throws the frame away if settings or the frontmost app changed during the shot.
-- Writes a `.tmp` file and then renames it, so a half-written image never appears. Retina frames can be half size (`halfSizeOnRetina`), with quality from settings.
+- Writes a `.tmp` file and then renames it, so a half-written image never appears. `Storage.removeIncompleteFiles` deletes leftover `.tmp` files (and export `.partial` files) at launch. Retina frames can be half size (`halfSizeOnRetina`), with quality from settings.
 
 ## Days
 
@@ -94,12 +115,12 @@ The default root is `~/Pictures/SSTL`.
 
 - `CGDirectDisplayID` can change (new primary display, reconnect), so frames are named by a **display key**: 8 hex characters hashed from the display's UUID (`CGDisplayCreateUUIDFromDisplayID`). The built-in display has no suffix; every other display gets `_d<key>`. Switching the primary display therefore never mixes screens in one video.
 - The Capture tab's Displays setting is `all`, `main` (whichever display is primary now) or a display key. A stored key whose display is unplugged captures nothing and shows as "Disconnected display".
-- Format setting: `jpeg`, `heic` or `png` (`Screenshotter.imageType`). Quality applies to JPEG and HEIC. HEIC is offered only if ImageIO can write it.
+- Format setting: `jpeg`, `heic` (shown as "HEIF", saved as `.heic`) or `png` (`Screenshotter.imageType`). Quality applies to JPEG and HEIC. HEIC is offered only if ImageIO can write it.
 - Older files used a numeric display ID after `_d` or `-d`; `Exporter.displayKey` still groups them.
 
 ## Export
 
-- `Exporter.export(batches:fps:in:job:progress:)` runs on a background queue. Each batch (one day, or several combined) becomes one video per display key. `ExportJob` carries the Cancel flag; cancelling deletes the partial file.
+- `Exporter.export(batches:fps:in:job:progress:)` runs on a background queue. Each batch (one day, or several combined) becomes one video per display key. `ExportJob` carries the Cancel flag; cancelling deletes the partial file. Each video is written to `<name>.partial` and renamed when finished; leftovers from a quit or crash are removed at launch.
 - Frames are sorted by the timestamp in the file name. The **newest** frame sets the video size (rounded down to even); other sizes are scaled to fit and centred on black. H.264 is used, or HEVC when a side exceeds 4096 px (hardware H.264 limit).
 - Each frame is decoded with ImageIO and drawn (colour-managed, sRGB) into a BGRA pixel buffer; AVAssetWriter converts and encodes on the hardware encoder. A batch of frames is decoded in parallel while the previous batch is appended. Output is tagged BT.709.
 - Speed is set by the hardware encoder, not decoding: 1,000 Retina frames (2940×1912) take about 11 s, the same as ffmpeg's `h264_videotoolbox` did. Half-size frames are about 4× faster.

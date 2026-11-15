@@ -7,10 +7,10 @@ Screenshots Timelapse is an independent project. It is not affiliated with or en
 ## Features
 
 - Captures the screen every N seconds, with optional capture on start
-- Choose which display to capture (all, the main one, or a specific screen) and the image format (JPEG, HEIC or PNG)
+- Choose which display to capture (all, the main one, or a specific screen) and the image format (JPEG, HEIF or PNG)
 - Block or allow specific apps so they never appear in frames
 - Optionally show or hide the wallpaper, desktop icons and notifications
-- Pauses when the screen is locked, the Mac is idle, or disk space is low
+- Pauses when the screen is locked, the Mac is idle, or disk space is low. Problems (Screen Recording off, low disk, captures failing) show an alert icon in the menu bar, with a fix button in the menu
 - Global start/stop shortcut, with an optional notification and sound (any macOS system sound) when you use it
 - Projects: separate screenshot folders and day lists, switched from the menu bar
 - Exports a day (or each display, or several days combined) to an `.mp4` or a GIF, with progress and Cancel. Video is written by macOS itself, so nothing extra needs installing
@@ -51,6 +51,7 @@ Other scripts in `scripts/`:
 
 - `app-icon.sh [icon.svg]` and `menubar-icon.sh [icon.svg]` turn an SVG into the icons (needs Xcode tools) and rebuild the app
 - `push.sh "message"` commits and pushes
+- `test.sh lowdisk|idle|noaccess|failing on|off` simulates those states so you can see the alerts, and `test.sh restore` puts everything back
 - `release.sh <version>` builds, tags and publishes a GitHub release with the zip attached (needs the `gh` CLI)
 
 For how the code is organised and why, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

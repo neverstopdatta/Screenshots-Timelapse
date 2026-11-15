@@ -8,6 +8,9 @@ final class SystemState {
     private var isAsleep = false
     private var lastDiskCheck = Date.distantPast
     private var isLowDisk = false
+    private var lastAccessCheck = Date.distantPast
+    private var hasScreenAccess = true
+    private var didRequestAccess = false
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     init(settings: SettingsStore) {
@@ -30,6 +33,7 @@ final class SystemState {
         let current = settings.settings
         if current.pauseWhenLocked, isLocked { return .locked }
         if isAsleep { return .asleep }
+        if !screenAccess() { return .noScreenAccess }
         if lowDisk(minGB: current.minFreeSpaceGB) { return .lowDisk }
         if current.pauseWhenIdleSeconds > 0, idleSeconds() >= Double(current.pauseWhenIdleSeconds) { return .idle }
         return nil
@@ -48,6 +52,21 @@ final class SystemState {
 
     private func idleSeconds() -> Double {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+
+    // Without Screen Recording permission every capture fails, so say so instead of silently saving nothing.
+    private func screenAccess() -> Bool {
+        if Date().timeIntervalSince(lastAccessCheck) >= 5 {
+            lastAccessCheck = Date()
+            let granted = CGPreflightScreenCaptureAccess()
+            if granted != hasScreenAccess { SSTLLog.write("Screen Recording access: \(granted)") }
+            hasScreenAccess = granted
+            if !granted, !didRequestAccess {
+                didRequestAccess = true
+                _ = CGRequestScreenCaptureAccess()
+            }
+        }
+        return hasScreenAccess
     }
 
     // Checked once a minute, not every tick.

@@ -13,6 +13,8 @@ enum Screenshotter {
         let date = Date()
         let settingsSnapshot = await MainActor.run { SettingsStore.shared.settings }
         let displays = content.displays.filter { Displays.matches(settingsSnapshot.displays, id: $0.displayID) }
+        var saved = 0
+        var lastError: Error?
         for display in displays {
             do {
                 guard let filter = await appRules.makeFilter(display: display, content: content, settings: settingsSnapshot) else {
@@ -41,10 +43,14 @@ enum Screenshotter {
                 try await Task.detached(priority: .utility) {
                     try writeImage(image, displayID: display.displayID, date: date, format: settingsSnapshot.imageFormat, quality: settingsSnapshot.jpegQuality)
                 }.value
+                saved += 1
             } catch {
+                lastError = error
                 SSTLLog.write("Display \(display.displayID) screenshot skipped: \(error.localizedDescription)")
             }
         }
+        // Every display failing is an error the menu bar must show; skips from app rules are not.
+        if saved == 0, let lastError { throw lastError }
     }
 
     private static func backgroundColor(_ hex: String) -> CGColor {

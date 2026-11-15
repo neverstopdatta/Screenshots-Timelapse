@@ -33,6 +33,11 @@ enum ToggleFeedback {
         }
     }
 
+    // Everything this app posts is a one-time toggle banner, so none of it should outlive the app.
+    static func clearDelivered() {
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+    }
+
     private static func notify(_ title: String) {
         let center = UNUserNotificationCenter.current()
         center.delegate = presenter

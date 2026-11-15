@@ -52,6 +52,17 @@ final class Hotkey {
         return true
     }
 
+    // A menu's tracking loop leaves hotkey events queued until it ends. Pulling them out by hand while it runs
+    // lets each press act at once, without closing the menu.
+    func drainPending() {
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var event: EventRef?
+        while ReceiveNextEvent(1, &spec, 0, true, &event) == noErr, let pending = event {
+            SendEventToEventTarget(pending, GetEventDispatcherTarget())
+            ReleaseEvent(pending)
+        }
+    }
+
     func unregister() {
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let eventHandler { RemoveEventHandler(eventHandler) }
