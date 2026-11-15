@@ -7,7 +7,7 @@ Screenshots Timelapse is an independent project. It is not affiliated with or en
 ## Features
 
 - Captures the screen every N seconds, with optional capture on start
-- Choose which display to capture (all, the main one, or a specific screen) and the image format (JPEG, HEIF or PNG)
+- Choose which display to capture (all, the main one, or a specific screen) and the image format (JPEG, HEIC or PNG)
 - Block or allow specific apps so they never appear in frames
 - Optionally show or hide the wallpaper, desktop icons and notifications
 - Pauses when the screen is locked, the Mac is idle, or disk space is low. Problems (Screen Recording off, low disk, captures failing) show an alert icon in the menu bar, with a fix button in the menu

@@ -196,6 +196,7 @@ private struct SettingsWindowView: View {
             }
         }
         .formStyle(.grouped)
+        .clearInitialFocus()
     }
 
     private var activeApps: [AppRuleEntry] {
@@ -368,6 +369,7 @@ private struct TimelapseTab: View {
         }
         .formStyle(.grouped)
         .onAppear { reload() }
+        .clearInitialFocus()
         // New screenshots arrive while the window is closed, so look again when the app comes forward.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in reload() }
         .onChange(of: settings.folderPath) { _, _ in

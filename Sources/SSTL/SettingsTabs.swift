@@ -84,6 +84,7 @@ struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        .clearInitialFocus()
     }
 
     // Choosing a sound plays it, so you hear what you pick.
@@ -92,6 +93,13 @@ struct GeneralTab: View {
             ForEach(ToggleFeedback.soundNames, id: \.self) { Text($0).tag($0) }
         }
         .onChange(of: selection.wrappedValue) { _, name in ToggleFeedback.play(name) }
+    }
+}
+
+extension View {
+    // AppKit gives the first text field keyboard focus when a tab appears; start with none instead.
+    func clearInitialFocus() -> some View {
+        onAppear { DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) } }
     }
 }
 
@@ -149,7 +157,7 @@ struct CaptureTab: View {
             }
             Picker("Format", selection: $settings.imageFormat) {
                 Text("JPEG").tag("jpeg")
-                if Screenshotter.heicAvailable { Text("HEIF").tag("heic") }
+                if Screenshotter.heicAvailable { Text("HEIC").tag("heic") }
                 Text("PNG").tag("png")
             }
             if settings.imageFormat != "png" {
@@ -160,6 +168,7 @@ struct CaptureTab: View {
             }
         }
         .formStyle(.grouped)
+        .clearInitialFocus()
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             connectedDisplays = Displays.connected()
         }
@@ -218,33 +227,37 @@ struct StorageTab: View {
             }
             }
             Section {
-            HStack {
-                Spacer()
-                Button("Delete All Screenshots…", role: .destructive, action: deleteAll)
-                Button("Remove Project…", role: .destructive, action: removeProject)
-                    .disabled(SettingsStore.shared.projects.count < 2)
-            }
-            }
-            Section {
-            Picker("Delete older than", selection: $settings.deleteAfterDays) {
-                Text("Never").tag(0)
-                ForEach([7, 30, 90, 365], id: \.self) { Text("\($0) days").tag($0) }
-            }
-            Toggle("Delete permanently (skip Trash)", isOn: $settings.deletePermanently)
+                Toggle(isOn: $settings.deletePermanently) {
+                    HStack(spacing: 4) {
+                        Text("Delete permanently (skip Trash)")
+                        InfoButton("Applies to every deletion: Delete older than, Delete All Screenshots and Remove Project. Off moves folders to the Trash instead.")
+                    }
+                }
             }
             Section {
-            Picker("Minimum free space", selection: $settings.minFreeSpaceGB) {
-                ForEach([1, 2, 5, 10, 20], id: \.self) { Text("\($0) GB").tag($0) }
+                Picker("Delete older than", selection: $settings.deleteAfterDays) {
+                    Text("Never").tag(0)
+                    ForEach([7, 30, 90, 365], id: \.self) { Text("\($0) days").tag($0) }
+                }
+                Picker("Minimum free space", selection: $settings.minFreeSpaceGB) {
+                    ForEach([1, 2, 5, 10, 20], id: \.self) { Text("\($0) GB").tag($0) }
+                }
             }
+            Section {
+                HStack {
+                    Spacer()
+                    Button("Delete All Screenshots…", role: .destructive, action: deleteAll)
+                    Button("Remove Project…", role: .destructive, action: removeProject)
+                        .disabled(SettingsStore.shared.projects.count < 2)
+                }
             }
         }
         .formStyle(.grouped)
         .onAppear {
             nameDraft = settings.activeProject
             refreshSize()
-            // AppKit hands the first text field (Name) keyboard focus when a tab appears; start with none.
-            DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) }
         }
+        .clearInitialFocus()
         .onChange(of: settings.folderPath) { _, _ in
             nameDraft = settings.activeProject
             refreshSize()

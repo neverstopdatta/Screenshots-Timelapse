@@ -115,7 +115,7 @@ macOS leaves hotkey events queued during menu tracking. While the menu is open, 
 
 - `CGDirectDisplayID` can change (new primary display, reconnect), so frames are named by a **display key**: 8 hex characters hashed from the display's UUID (`CGDisplayCreateUUIDFromDisplayID`). The built-in display has no suffix; every other display gets `_d<key>`. Switching the primary display therefore never mixes screens in one video.
 - The Capture tab's Displays setting is `all`, `main` (whichever display is primary now) or a display key. A stored key whose display is unplugged captures nothing and shows as "Disconnected display".
-- Format setting: `jpeg`, `heic` (shown as "HEIF", saved as `.heic`) or `png` (`Screenshotter.imageType`). Quality applies to JPEG and HEIC. HEIC is offered only if ImageIO can write it.
+- Format setting: `jpeg`, `heic` or `png` (`Screenshotter.imageType`). Quality applies to JPEG and HEIC. HEIC is offered only if ImageIO can write it.
 - Older files used a numeric display ID after `_d` or `-d`; `Exporter.displayKey` still groups them.
 
 ## Export
